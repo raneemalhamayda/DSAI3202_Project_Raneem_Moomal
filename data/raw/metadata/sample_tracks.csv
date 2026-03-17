@@ -1,0 +1,6 @@
+track_id,genre,file_path
+1,Rock,data/raw/audio/000001.mp3
+2,Hip-Hop,data/raw/audio/000002.mp3
+3,,data/raw/audio/000003.mp3
+1,Rock,data/raw/audio/000001.mp3
+4,Jazz,data/raw/audio/000004.mp3
