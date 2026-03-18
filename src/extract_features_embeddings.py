@@ -1,2 +1,0 @@
-
-# Placeholder - Phase 1
