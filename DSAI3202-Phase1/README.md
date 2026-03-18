@@ -234,7 +234,13 @@ Open `notebooks/01_eda.ipynb` in Databricks and run all cells.
 
 ---
 
-## Branch Strategy
+![Raw Container](assets/raw_container.png)
+![Processed Container](assets/processed_container.png)
+![Databricks EDA](assets/databricks_output.png)
+![Genre Distribution](assets/genre_distribution.png)
+![Duration Distribution](assets/duration_distribution.png)
+![Missing Values](assets/missing_values.png)
+![MFCC Heatmap](assets/mfcc_correlation.png)
 All development work is on the `dev` branch, merged to `main` via Pull Request.
 ```bash
 git checkout dev     # active development branch
