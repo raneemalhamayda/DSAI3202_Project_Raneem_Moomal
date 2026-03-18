@@ -30,6 +30,7 @@ DSAI3202-Phase1/
 │   └── 02_feature_extraction.ipynb
 ├── configs/
 │   └── pipeline_config.yaml
+├── assets/               ← screenshots and figures
 └── outputs/
     └── figures/
 ```
@@ -48,7 +49,7 @@ DSAI3202-Phase1/
 | Resource | Value |
 |----------|-------|
 | Resource Group | rg-dsai3202-phase1 |
-| Storage Account | dsai3202storage |
+| Storage Account | dsai3202rm |
 | Region | East US |
 | Redundancy | LRS |
 | Containers | `raw` (private), `processed` (private) |
@@ -56,8 +57,9 @@ DSAI3202-Phase1/
 ### What Was Uploaded to `raw/`
 | Blob | Description |
 |------|-------------|
-| `fma_small.zip` | Original audio zip, unmodified |
 | `fma_metadata.zip` | Original metadata zip, unmodified |
+| `fma_metadata/tracks.csv` | Extracted track metadata |
+| `fma_metadata/features.csv` | Extracted pre-computed features |
 | `_manifest_v1.0.txt` | Ingestion version record |
 
 ### How to Run
@@ -66,10 +68,12 @@ python src/ingestion.py
 ```
 
 ### Key Design Decision
-Zip files are stored **unextracted** in the raw zone to preserve data 
-integrity. Databricks handles extraction at processing time. This follows 
-medallion architecture (raw → processed).
+Zip files are stored unextracted in the raw zone to preserve data integrity. 
+This follows medallion architecture (raw → processed).
 
+![Raw Container](assets/raw_container_phase1.png)
+
+---
 
 ## Step 2 — ETL Pipeline (Deliverable II.2)
 
@@ -86,6 +90,20 @@ validates them, then saves parquet files to the `processed` container.
 | Standardize duration | `standardize_duration()` | Remove tracks < 5s or > 40s (corrupt/outliers) |
 | Encode genre labels | `encode_genre_labels()` | Convert string genres to numeric IDs for ML |
 
+### ETL Output
+```
+After split filter: 106574 tracks (was 106574)
+Dropped 56976 rows with missing genre
+Removed 0 duplicate track IDs
+Removed 48116 tracks with abnormal duration
+Encoded 13 genres: ['Classical', 'Electronic', 'Experimental', 'Folk', 
+'Hip-Hop', 'Instrumental', 'International', 'Jazz', 'Old-Time / Historic', 
+'Pop', 'Rock', 'Soul-RnB', 'Spoken']
+Saved to processed/tracks_clean.parquet
+Saved to processed/features_clean.parquet
+=== ETL Complete ===
+```
+
 ### Output Files in `processed/`
 - `tracks_clean.parquet` — cleaned track metadata
 - `features_clean.parquet` — aligned pre-computed feature matrix
@@ -96,11 +114,13 @@ python src/etl.py
 ```
 
 ### Technical Note
-FMA metadata CSVs use multi-level headers. The pipeline uses 
-`header=[0,1]` when loading and flattens columns into `category_field` 
-format (e.g. `track_genre_top`, `set_split`).
+FMA metadata CSVs use multi-level headers. The pipeline uses `header=[0,1]` 
+when loading and flattens columns into `category_field` format 
+(e.g. `track_genre_top`, `set_split`).
 
+![Processed Container](assets/processed_container_phase1.png)
 
+---
 
 ## Step 3 — Data Catalog & Governance (Deliverable II.3)
 
@@ -110,8 +130,9 @@ See full catalog in [`data_catalog.md`](./data_catalog.md)
 ### Zone Overview
 | Zone | Container | Path | Description |
 |------|-----------|------|-------------|
-| Raw | raw | fma_small.zip | Original audio zip, unmodified |
 | Raw | raw | fma_metadata.zip | Original metadata zip, unmodified |
+| Raw | raw | fma_metadata/tracks.csv | Extracted track metadata |
+| Raw | raw | fma_metadata/features.csv | Extracted features |
 | Raw | raw | _manifest_v1.0.txt | Ingestion version record |
 | Processed | processed | tracks_clean.parquet | Cleaned track metadata |
 | Processed | processed | features_clean.parquet | Aligned feature matrix |
@@ -120,16 +141,17 @@ See full catalog in [`data_catalog.md`](./data_catalog.md)
 | Column | Type | Description | Nullable |
 |--------|------|-------------|----------|
 | track_id | int (index) | Unique track identifier | No |
-| track_genre_top | string | Top-level genre (8 classes) | No |
+| track_genre_top | string | Top-level genre (13 classes) | No |
 | track_duration | float | Duration in seconds | No |
 | track_title | string | Track title | Yes |
 | artist_name | string | Artist name | Yes |
 | set_split | string | training / validation / test | No |
 | genre_id | int | Numeric encoding of genre label | No |
 
-### Genre Classes (8)
-`Electronic` · `Experimental` · `Folk` · `Hip-Hop` · `Instrumental` · 
-`International` · `Pop` · `Rock`
+### Genre Classes (13)
+`Classical` · `Electronic` · `Experimental` · `Folk` · `Hip-Hop` · 
+`Instrumental` · `International` · `Jazz` · `Old-Time / Historic` · 
+`Pop` · `Rock` · `Soul-RnB` · `Spoken`
 
 ### Data Lineage
 ```
@@ -138,7 +160,7 @@ raw/fma_metadata.zip
   -> processed/tracks_clean.parquet
 ```
 
-
+---
 
 ## Step 4 — Exploratory Data Analysis (Deliverable II.4)
 
@@ -146,12 +168,24 @@ EDA was performed in Databricks using `notebooks/01_eda.ipynb`, loading
 data directly from Azure Blob Storage.
 
 ### Key Findings
-- **Genre distribution:** classes are reasonably balanced across 8 genres
+- **Genre distribution:** 13 genre classes with varying representation across the dataset
 - **Track duration:** majority of tracks fall between 25–35 seconds after cleaning
-- **Missing values:** `artist_name` and `track_title` have some nulls; 
-  `track_genre_top` has none after ETL
-- **MFCC correlation:** adjacent MFCC coefficients show high correlation, 
-  confirming timbre captures consistent tonal structure
+- **Missing values:** `artist_name` and `track_title` have some nulls; `track_genre_top` has none after ETL
+- **MFCC correlation:** adjacent MFCC coefficients show high correlation, confirming timbre captures consistent tonal structure
+
+### Genre Distribution
+![Genre Distribution](assets/genre_distribution.png)
+
+### Track Duration Distribution
+![Duration Distribution](assets/duration_distribution.png)
+
+### Missing Values by Column
+![Missing Values](assets/missing_values.png)
+
+### MFCC Correlation Heatmap
+![MFCC Heatmap](assets/mfcc_correlation.png)
+
+---
 
 ## Step 5 — Feature Extraction (Deliverable II.5)
 
@@ -179,8 +213,9 @@ that operate on full mel spectrograms.
 python src/features.py
 ```
 
-### Output
-- `processed/features_extracted.parquet` — 49 features per track
+> **Note:** `fma_small.zip` (8 GB audio) is required to run feature extraction.
+> Download from https://github.com/mdeff/fma, upload to the `raw` container,
+> then run `python src/features.py`.
 
 ---
 
@@ -188,11 +223,10 @@ python src/features.py
 | Resource | Type | Purpose |
 |----------|------|---------|
 | rg-dsai3202-phase1 | Resource Group | Container for all resources |
-| dsai3202storage | Storage Account (LRS) | Raw and processed data zones |
+| dsai3202rm | Storage Account (LRS) | Raw and processed data zones |
 | raw | Blob Container | Original unmodified data |
 | processed | Blob Container | Cleaned parquet outputs |
 | Azure Databricks | Workspace | EDA and feature extraction notebooks |
-| Microsoft Purview | Catalog | Data governance and lineage |
 
 ---
 
@@ -211,7 +245,7 @@ pip install -r requirements.txt
 Create a `.env` file in the project root:
 ```
 AZURE_STORAGE_CONNECTION_STRING=your_connection_string_here
-AZURE_STORAGE_ACCOUNT_NAME=your_account_name
+AZURE_STORAGE_ACCOUNT_NAME=dsai3202rm
 ```
 
 ### 3. Run ingestion
@@ -234,13 +268,7 @@ Open `notebooks/01_eda.ipynb` in Databricks and run all cells.
 
 ---
 
-![Raw Container](assets/raw_container.png)
-![Processed Container](assets/processed_container.png)
-![Databricks EDA](assets/databricks_output.png)
-![Genre Distribution](assets/genre_distribution.png)
-![Duration Distribution](assets/duration_distribution.png)
-![Missing Values](assets/missing_values.png)
-![MFCC Heatmap](assets/mfcc_correlation.png)
+## Branch Strategy
 All development work is on the `dev` branch, merged to `main` via Pull Request.
 ```bash
 git checkout dev     # active development branch
