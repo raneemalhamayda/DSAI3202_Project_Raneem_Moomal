@@ -274,3 +274,166 @@ All development work is on the `dev` branch, merged to `main` via Pull Request.
 git checkout dev     # active development branch
 git checkout main    # stable, submitted version
 ```
+
+---
+
+## Phase 2 — Modeling, Validation, and Deployment
+
+---
+
+## II.1 — Model Development
+
+### Problem Definition
+Multi-class classification across 13 music genres using 518 hand-crafted audio features derived from MFCCs, chroma, spectral contrast, zero-crossing rate, and RMS energy (extracted in Phase 1).
+
+### Dataset Used
+| Split | Tracks |
+|---|---|
+| Training | 1,155 |
+| Validation | 124 |
+| Test | 203 |
+| **Total** | **1,482** |
+
+Splits are inherited directly from Phase 1 ETL (`set_split` column in `tracks_clean.parquet`) to ensure no data leakage between phases.
+
+### Baseline Model — Random Forest
+A Random Forest classifier was selected as the baseline due to its robustness to high-dimensional feature spaces and interpretability.
+
+| Parameter | Value |
+|---|---|
+| n_estimators | 200 |
+| random_state | 42 |
+| n_jobs | -1 |
+
+**Justification:** Random Forest handles the 518-dimensional feature space well without requiring feature scaling, and provides feature importance scores useful for error analysis.
+
+### Main Model — SVM (RBF Kernel)
+A Support Vector Machine with RBF kernel was selected as the main model based on its strong performance in audio classification literature.
+
+| Parameter | Value |
+|---|---|
+| kernel | rbf |
+| C | 10 |
+| gamma | scale |
+| random_state | 42 |
+
+**Justification:** SVM with RBF kernel is well-suited for non-linear decision boundaries in audio feature spaces. The `scale` gamma adapts to feature variance automatically.
+
+### Reproducibility
+All models use `random_state=42`. Data splits are fixed from Phase 1. Training is fully reproducible by running `python train.py`.
+
+---
+
+## II.2 — Model Validation
+
+### Validation Strategy
+- **Primary metric:** Weighted F1-score (accounts for class imbalance across 13 genres)
+- **Secondary metrics:** Accuracy, per-class F1, macro F1
+- **Validation set** used for model selection; **test set** used only for final evaluation
+- No data leakage: splits defined in Phase 1 ETL, not re-randomized
+
+### Results
+
+| Model | Val Weighted F1 | Test Weighted F1 | Val Accuracy |
+|---|---|---|---|
+| Random Forest (baseline) | **0.4404** | **0.4419** | 0.50 |
+| SVM (main model) | 0.2207 | — | 0.27 |
+
+**Selected model: Random Forest** (higher validation F1).
+
+### Per-Class Performance (Random Forest, Validation Set)
+
+| Genre ID | Precision | Recall | F1 | Support |
+|---|---|---|---|---|
+| 1 (Electronic) | 0.40 | 0.12 | 0.19 | 16 |
+| 2 (Experimental) | 0.38 | 0.57 | 0.46 | 28 |
+| 9 (Rock) | 0.54 | 0.88 | 0.67 | 41 |
+| 10 (Pop) | 0.80 | 0.32 | 0.46 | 25 |
+| Others | 0.00 | 0.00 | 0.00 | <6 each |
+
+### Error Analysis
+- **Best performing genre:** Rock (F1: 0.67) — largest support (41 samples), most distinct spectral profile
+- **Worst performing genres:** Classical, Folk, Jazz, Soul-RnB — very few validation samples (1–3 each), leading to undefined precision
+- **Key insight:** Class imbalance is the primary source of poor performance for minority genres. The model performs reasonably on well-represented classes.
+- **Confusion pattern:** Experimental and Electronic are frequently confused due to overlapping timbral characteristics (similar MFCC distributions)
+
+### Limitations
+- Only 1,482 of 8,000 FMA Small tracks have pre-computed features in `features_clean.parquet`; full feature extraction over all 8,000 tracks (requiring `fma_small.zip` audio files) is expected to significantly improve performance
+- Some genre classes have fewer than 5 validation samples, making per-class metrics unreliable for those classes
+
+---
+
+## II.3 — Model Versioning and Registration
+
+Models are registered in Azure ML with full metadata for traceability.
+
+| Field | Value |
+|---|---|
+| Model name | `music-genre-classifier` |
+| Version | v1 |
+| Algorithm | RandomForestClassifier |
+| Training data | `features_clean_v1.0` (Phase 1 processed container) |
+| Feature set | `mfcc_chroma_spectral_49dim` (518 total columns) |
+| Val F1 (weighted) | 0.4404 |
+| Test F1 (weighted) | 0.4419 |
+| Random seed | 42 |
+| Workspace | `dsai3202rm` |
+| Resource group | `rg-60300390` |
+
+Registration was performed via `azureml.core.Model.register()` with all tags logged programmatically in `train.py`.
+
+---
+
+## II.4 — Deployment
+
+> *Completed by Moomal Gajani — see deployment section below*
+
+---
+
+## II.5 — Deployment Validation
+
+> *Completed by Moomal Gajani — see deployment validation section below*
+
+---
+
+## How to Reproduce
+
+### 1. Clone and set up
+```bash
+git clone https://github.com/YOUR_USERNAME/DSAI3202-Phase2.git
+cd DSAI3202-Phase2
+pip install -r requirements.txt
+```
+
+### 2. Run training and registration
+```bash
+python train.py
+```
+
+This will:
+- Connect to Azure ML workspace `dsai3202rm`
+- Download `features_clean.parquet` and `tracks_clean.parquet` from the `phase1_processed` datastore
+- Train Random Forest (baseline) and SVM
+- Evaluate both on validation set and select best model
+- Save confusion matrix to `outputs/confusion_matrix.png`
+- Register the best model as `music-genre-classifier` in Azure ML
+
+### Environment
+| Library | Purpose |
+|---|---|
+| scikit-learn | Model training and evaluation |
+| pandas / numpy | Data manipulation |
+| joblib | Model serialization |
+| azureml-core | Azure ML workspace, datastore, model registration |
+| matplotlib / seaborn | Confusion matrix visualization |
+
+---
+
+## Azure Resources (Phase 2)
+
+| Resource | Type | Purpose |
+|---|---|---|
+| `dsai3202rm` | Azure ML Workspace | Model training, registration, deployment |
+| `project-compute` | Compute Instance | Training environment |
+| `phase1_processed` | Datastore (Blob) | Access to Phase 1 processed features |
+| `music-genre-classifier` | Registered Model | Versioned model artifact |
